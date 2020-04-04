@@ -1,8 +1,13 @@
 package main
 
 import (
+	"compress/zlib"
+	"crypto/sha1"
+	"encoding/hex"
 	"fmt"
+	"io/ioutil"
 	"os"
+	"strconv"
 
 	"github.com/urfave/cli"
 )
@@ -15,6 +20,17 @@ func main() {
 			Name: "init",
 			Action: func(c *cli.Context) error {
 				cmdInit()
+				return nil
+			},
+		},
+		{
+			Name: "hash-object",
+			Action: func(c *cli.Context) error {
+				path := c.Args().First()
+				if path == "" {
+					cli.ShowCommandHelpAndExit(c, "hash-object", 0)
+				}
+				cmdHashObject(path, false)
 				return nil
 			},
 		},
@@ -42,4 +58,42 @@ func cmdInit() {
 	f.WriteString("ref: refs/heads/master\n")
 
 	fmt.Println("Initialized empty Toygit repository in " + dir)
+}
+
+func cmdHashObject(path string, write bool) {
+	data, err := ioutil.ReadFile(path)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	sha := hashObject(data, "blob", write)
+	fmt.Println(sha)
+}
+
+func hashObject(data []byte, objType string, write bool) string {
+	header := objType + " " + strconv.Itoa(len(data)) + "\x00"
+	result := append([]byte(header), data...)
+
+	h := sha1.New()
+	h.Write(result)
+	sha := hex.EncodeToString(h.Sum(nil))
+
+	if write {
+		dir, _ := os.Getwd()
+		path := dir + "/.toygit/objects/" + sha[:2]
+		err := os.Mkdir(path, 0777)
+		if err != nil {
+			fmt.Println(err)
+			return sha
+		}
+		f, err := os.Create(path + "/" + sha[2:])
+		if err != nil {
+			fmt.Println(err)
+			return sha
+		}
+		zlib.NewWriter(f).Write(result)
+	}
+
+	return sha
 }
