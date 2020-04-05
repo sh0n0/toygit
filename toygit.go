@@ -87,13 +87,21 @@ func hashObject(data []byte, objType string, write bool) string {
 			fmt.Println(err)
 			return sha
 		}
+
 		f, err := os.Create(path + "/" + sha[2:])
 		if err != nil {
 			fmt.Println(err)
 			return sha
 		}
-		zlib.NewWriter(f).Write(result)
-	}
+		defer f.Close()
 
+		writeZlib(f, result)
+	}
 	return sha
+}
+
+func writeZlib(dst io.Writer, data []byte) {
+	zw := zlib.NewWriter(dst)
+	zw.Write(data)
+	zw.Close()
 }
