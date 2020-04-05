@@ -1,13 +1,16 @@
 package main
 
 import (
+	"bytes"
 	"compress/zlib"
 	"crypto/sha1"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"os"
 	"strconv"
+	"strings"
 
 	"github.com/urfave/cli"
 )
@@ -30,7 +33,18 @@ func main() {
 				if path == "" {
 					cli.ShowCommandHelpAndExit(c, "hash-object", 0)
 				}
-				cmdHashObject(path, false)
+				cmdHashObject(path, true)
+				return nil
+			},
+		},
+		{
+			Name: "cat-file",
+			Action: func(c *cli.Context) error {
+				path := c.Args().First()
+				if path == "" {
+					cli.ShowCommandHelpAndExit(c, "cat-file", 0)
+				}
+				cmdCatFile(path)
 				return nil
 			},
 		},
@@ -104,4 +118,64 @@ func writeZlib(dst io.Writer, data []byte) {
 	zw := zlib.NewWriter(dst)
 	zw.Write(data)
 	zw.Close()
+}
+
+func cmdCatFile(sha1Prefix string) {
+	if len(sha1Prefix) < 2 {
+		fmt.Println("hash prefix must be 2 or more characters")
+		return
+	}
+
+	dir, _ := os.Getwd()
+	objDir := dir + "/.toygit/objects/" + sha1Prefix[:2]
+	res := sha1Prefix[2:]
+
+	files, _ := ioutil.ReadDir(objDir)
+	objs := []os.FileInfo{}
+	for _, f := range files {
+		if strings.HasPrefix(f.Name(), res) {
+			objs = append(objs, f)
+		}
+	}
+
+	if len(objs) == 0 {
+		fmt.Println("not found")
+		return
+	}
+
+	if len(objs) > 1 {
+		fmt.Println("match too many objects")
+		return
+	}
+
+	f, err := os.Open(objDir + "/" + objs[0].Name())
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	defer f.Close()
+
+	buf := new(bytes.Buffer)
+	if err := readZlib(buf, f); err != nil {
+		fmt.Println(err)
+		return
+	}
+	nulIdx := strings.Index(buf.String(), "\x00")
+	fmt.Println(buf.String()[nulIdx:])
+
+	return
+}
+
+func readZlib(dst *bytes.Buffer, src io.Reader) error {
+	r, err := zlib.NewReader(src)
+	if err != nil {
+		return err
+	}
+
+	if _, err := dst.ReadFrom(r); err != nil {
+		return err
+	}
+
+	r.Close()
+	return nil
 }
