@@ -9,6 +9,7 @@ import (
 	"io"
 	"io/ioutil"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -45,6 +46,17 @@ func main() {
 					cli.ShowCommandHelpAndExit(c, "cat-file", 0)
 				}
 				cmdCatFile(path)
+				return nil
+			},
+		},
+		{
+			Name: "add",
+			Action: func(c *cli.Context) error {
+				path := c.Args().First()
+				if path == "" {
+					cli.ShowCommandHelpAndExit(c, "add", 0)
+				}
+				cmdAdd(path)
 				return nil
 			},
 		},
@@ -108,7 +120,7 @@ func hashObject(path string, write bool) string {
 	if write {
 		dir, _ := os.Getwd()
 		path := dir + "/.toygit/objects/" + sha[:2]
-		err := os.Mkdir(path, 0777)
+		os.Mkdir(path, 0777)
 		if err != nil {
 			fmt.Println(err)
 			return sha
@@ -190,4 +202,114 @@ func readZlib(dst *bytes.Buffer, src io.Reader) error {
 
 	r.Close()
 	return nil
+}
+
+// Index file: <sha> <path><\n>
+
+type indexEntry struct {
+	sha  string
+	path string
+}
+
+func readIndexEntries() []indexEntry {
+	dir, _ := os.Getwd()
+	idxPath := dir + "/.toygit/index"
+	idx, _ := ioutil.ReadFile(idxPath)
+	if len(idx) == 0 {
+		return []indexEntry{}
+	}
+
+	entries := bytes.Split(idx, []byte("\n"))
+	entries = entries[:len(entries)-1]
+
+	allEntries := []indexEntry{}
+	for _, entry := range entries {
+		sepEntry := bytes.Split(entry, []byte(" "))
+		newEntry := indexEntry{string(sepEntry[0]), string(sepEntry[1])}
+		allEntries = append(allEntries, newEntry)
+	}
+	return allEntries
+}
+
+// visit recursively all directories and files under selected directory and return all file paths
+func readAllFilePaths(root string) []string {
+	allFilePaths := []string{}
+	filepath.Walk(root,
+		func(path string, info os.FileInfo, err error) error {
+			if info.Name() == ".toygit" {
+				return filepath.SkipDir
+			}
+			if info.Name() == ".git" {
+				return filepath.SkipDir
+			}
+
+			if !info.IsDir() {
+				allFilePaths = append(allFilePaths, path)
+			}
+			return nil
+		})
+	return allFilePaths
+}
+
+func cmdAdd(path string) {
+	fInfo, err := os.Stat(path)
+	if err != nil {
+		println(err)
+		return
+	}
+
+	stagedEntries := readIndexEntries()
+	nextEntries := []indexEntry{}
+	allFilePaths := []string{}
+
+	if !fInfo.IsDir() {
+		allFilePaths = append(allFilePaths, path)
+	} else {
+		allFilePaths = append(allFilePaths, readAllFilePaths(path)...)
+	}
+
+	fmt.Println(allFilePaths)
+
+	for _, entry := range stagedEntries {
+		exist := false
+		for _, newPath := range allFilePaths {
+			if entry.path == newPath {
+				exist = true
+			}
+		}
+		if !exist {
+			nextEntries = append(nextEntries, entry)
+		}
+	}
+
+	for _, newPath := range allFilePaths {
+		sha := hashObject(newPath, true)
+		newEntry := indexEntry{sha, newPath}
+		nextEntries = append(nextEntries, newEntry)
+	}
+
+	addEntriesToIndex(nextEntries)
+}
+
+func addEntriesToIndex(entries []indexEntry) {
+	dir, _ := os.Getwd()
+	idxPath := dir + "/.toygit/index"
+	data := ""
+
+	for _, entry := range entries {
+		data = data + entry.sha + " " + entry.path + "\n"
+	}
+
+	f, err := os.Create(idxPath)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	defer f.Close()
+
+	_, err = f.WriteString(data)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
 }
