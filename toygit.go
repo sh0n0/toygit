@@ -33,7 +33,7 @@ func main() {
 				if path == "" {
 					cli.ShowCommandHelpAndExit(c, "hash-object", 0)
 				}
-				cmdHashObject(path, true)
+				cmdHashObject(path)
 				return nil
 			},
 		},
@@ -74,19 +74,31 @@ func cmdInit() {
 	fmt.Println("Initialized empty Toygit repository in " + dir)
 }
 
-func cmdHashObject(path string, write bool) {
-	data, err := ioutil.ReadFile(path)
+func cmdHashObject(path string) {
+	fInfo, err := os.Stat(path)
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
 
-	sha := hashObject(data, "blob", write)
+	if fInfo.IsDir() {
+		fmt.Println("Unable to hash directory")
+		return
+	}
+
+	sha := hashObject(path, false)
 	fmt.Println(sha)
 }
 
-func hashObject(data []byte, objType string, write bool) string {
-	header := objType + " " + strconv.Itoa(len(data)) + "\x00"
+func hashObject(path string, write bool) string {
+	dir, _ := os.Getwd()
+	data, err := ioutil.ReadFile(dir + "/" + path)
+	if err != nil {
+		fmt.Println(err)
+		return ""
+	}
+
+	header := "blob" + " " + strconv.Itoa(len(data)) + "\x00"
 	result := append([]byte(header), data...)
 
 	h := sha1.New()
