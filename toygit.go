@@ -82,6 +82,13 @@ func main() {
 				return nil
 			},
 		},
+		{
+			Name: "log",
+			Action: func(c *cli.Context) error {
+				cmdLog()
+				return nil
+			},
+		},
 	}
 	app.Run(os.Args)
 }
@@ -418,16 +425,16 @@ func createTreeObject(resPath []string, tree *treeObject, entry indexEntry) {
 	}
 }
 
-func readHead() string {
+func readHead() (branchName string, sha string) {
 	h, _ := ioutil.ReadFile(HEAD_PATH)
 	head := bytes.Split(h, []byte(" "))
 	if string(head[0]) != "ref:" {
-		return string(h)
+		return "", string(h)
 	}
 
 	data := strings.Split(string(h), "/")
 	br := data[len(data)-1]
-	return string(br)
+	return string(br), readRef(br)
 }
 
 func writeHead(name string, isBranch bool) {
@@ -467,8 +474,7 @@ func clearIndex() {
 }
 
 func cmdCommit(message string) {
-	br := readHead()
-	prevCommitSha := readRef(br)
+	br, prevCommitSha := readHead()
 	var newTree treeObject
 
 	if prevCommitSha == "" {
@@ -561,4 +567,20 @@ func cmdCheckout(dist string) {
 	} else {
 		writeHead(dist, true)
 	}
+}
+
+func showCommitLog(sha string) {
+	fmt.Println("commit " + sha)
+	catFile(sha)
+	prevCommit := string(readObjectByHash(sha))
+	commit := strings.Split(prevCommit, "\n")[1]
+	sepCommit := strings.Split(commit, " ")
+	if sepCommit[0] == "parent" {
+		showCommitLog(sepCommit[1])
+	}
+}
+
+func cmdLog() {
+	_, rootCommitSha := readHead()
+	showCommitLog(rootCommitSha)
 }
