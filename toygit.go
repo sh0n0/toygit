@@ -75,6 +75,10 @@ func main() {
 	app.Run(os.Args)
 }
 
+const (
+	HEAD_PATH = ".toygit/HEAD"
+)
+
 func cmdInit() {
 	dir, _ := os.Getwd()
 
@@ -181,7 +185,6 @@ func readObjectByHash(sha1Prefix string) []byte {
 		return nil
 	}
 	defer f.Close()
-
 	buf := new(bytes.Buffer)
 	if err := readZlib(buf, f); err != nil {
 		fmt.Println(err)
@@ -342,17 +345,48 @@ type treeObject struct {
 	directories map[string]*treeObject
 }
 
-func readPrevTreeObject() treeObject {
-	return treeObject{files: make(map[string]*indexEntry), directories: make(map[string]*treeObject)}
+func restoreTreeObject(sha string, tree *treeObject) {
+	data := readObjectByHash(sha)
+	sepData := strings.Split(string(data), "\n")
+
+	for _, obj := range sepData {
+		sepEntry := strings.Split(obj, " ")
+		if len(sepEntry) == 1 {
+			continue
+		}
+		sha := sepEntry[0]
+		path := sepEntry[1]
+		objType := sepEntry[2]
+		if objType == "blob" {
+			tree.files[path] = &indexEntry{sha: sha, path: path}
+			continue
+		}
+
+		if obj, ok := tree.directories[path]; ok {
+			restoreTreeObject(sha, obj)
+		} else {
+			tree.directories[path] = &treeObject{files: make(map[string]*indexEntry), directories: make(map[string]*treeObject)}
+			restoreTreeObject(sha, tree.directories[path])
+		}
+	}
+}
+
+func readPrevTreeObject(sha string) treeObject {
+	data := string(readObjectByHash(sha))
+	sepData := strings.Split(data, "\n")
+	treeSha := strings.Split(sepData[0], " ")[1]
+	tree := &treeObject{files: make(map[string]*indexEntry), directories: make(map[string]*treeObject)}
+	restoreTreeObject(string(treeSha), tree)
+	return *tree
 }
 
 func writeTreeObject(tree treeObject) string {
 	result := ""
 	for fileName, file := range tree.files {
-		result += file.sha + " " + fileName + "\n"
+		result += file.sha + " " + fileName + " " + "blob" + "\n"
 	}
 	for dirName, dir := range tree.directories {
-		result += writeTreeObject(*dir) + " " + dirName + "\n"
+		result += writeTreeObject(*dir) + " " + dirName + " " + "tree" + "\n"
 	}
 	fmt.Println(result)
 
@@ -374,9 +408,65 @@ func createTreeObject(resPath []string, tree *treeObject, entry indexEntry) {
 	}
 }
 
+func readHead() string {
+	h, _ := ioutil.ReadFile(HEAD_PATH)
+	head := bytes.Split(h, []byte(" "))
+	if string(head[0]) != "ref:" {
+		return string(h)
+	}
+
+	data := strings.Split(string(h), "/")
+	br := data[len(data)-1]
+	return string(br)
+}
+
+func writeHead(name string) {
+	err := ioutil.WriteFile(HEAD_PATH, []byte("ref: refs/heads/master\n"), 0777)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+}
+
+func readRef(name string) string {
+	refPath := ".toygit/refs/heads" + "/" + name
+	if _, err := os.Stat(refPath); err != nil {
+		os.Create(refPath)
+		return ""
+	}
+	rf, _ := ioutil.ReadFile(refPath)
+	return string(rf)
+}
+
+func writeRef(name string, sha string) {
+	refPath := ".toygit/refs/heads" + "/" + name
+	rf, _ := os.Create(refPath)
+	defer rf.Close()
+	rf.WriteString(sha)
+}
+
+func clearIndex() {
+	idxPath := ".toygit/index"
+	os.Create(idxPath)
+}
+
 func cmdCommit(message string) {
+	br := readHead()
+	prevCommitSha := readRef(br)
+	var newTree treeObject
+
+	if prevCommitSha == "" {
+		newTree = treeObject{files: make(map[string]*indexEntry), directories: make(map[string]*treeObject)}
+	} else {
+		newTree = readPrevTreeObject(prevCommitSha)
+	}
+
 	entries := readIndexEntries()
-	newTree := readPrevTreeObject()
+
+	if len(entries) == 0 {
+		fmt.Println("nothing staged")
+		return
+	}
 
 	for _, entry := range entries {
 		sepPath := strings.Split(entry.path, "/")
@@ -387,10 +477,15 @@ func cmdCommit(message string) {
 
 	result := ""
 	result += "tree" + " " + treeSha + "\n"
-	result += "parent" + " " + "parentHash" + "\n"
-	result += "author" + " " + "author_name" + "\n\n"
+	if prevCommitSha != "" {
+		result += "parent" + " " + prevCommitSha + "\n"
+	}
+	result += "author" + " " + "author_name" + "\n"
+	result += "committer" + " " + "commiter_name" + "\n\n"
 	result += message
 
 	commitSha := hashObject([]byte(result), true)
+	writeRef(br, commitSha)
+	clearIndex()
 	fmt.Println(commitSha)
 }
