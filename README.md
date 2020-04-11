@@ -15,3 +15,5 @@ The commands implemented are listed below (Of course they don't have complete fu
 - commit
 - checkout
 - log
+- hash-object
+- cat-file
