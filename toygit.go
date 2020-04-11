@@ -41,11 +41,11 @@ func main() {
 		{
 			Name: "cat-file",
 			Action: func(c *cli.Context) error {
-				path := c.Args().First()
-				if path == "" {
+				hash := c.Args().First()
+				if hash == "" {
 					cli.ShowCommandHelpAndExit(c, "cat-file", 0)
 				}
-				cmdCatFile(path)
+				cmdCatFile(hash)
 				return nil
 			},
 		},
@@ -68,6 +68,17 @@ func main() {
 					cli.ShowCommandHelpAndExit(c, "commit", 0)
 				}
 				cmdCommit(message)
+				return nil
+			},
+		},
+		{
+			Name: "checkout",
+			Action: func(c *cli.Context) error {
+				hash := c.Args().First()
+				if hash == "" {
+					cli.ShowCommandHelpAndExit(c, "checkout", 0)
+				}
+				cmdCheckout(hash)
 				return nil
 			},
 		},
@@ -388,7 +399,6 @@ func writeTreeObject(tree treeObject) string {
 	for dirName, dir := range tree.directories {
 		result += writeTreeObject(*dir) + " " + dirName + " " + "tree" + "\n"
 	}
-	fmt.Println(result)
 
 	return hashObject([]byte(result), true)
 }
@@ -487,5 +497,39 @@ func cmdCommit(message string) {
 	commitSha := hashObject([]byte(result), true)
 	writeRef(br, commitSha)
 	clearIndex()
-	fmt.Println(commitSha)
+	fmt.Println("commit hash is " + commitSha)
+}
+
+func removeAllFileAndDir() {
+	files, _ := ioutil.ReadDir("./")
+	for _, file := range files {
+		if file.Name() == ".toygit" {
+			continue
+		}
+		os.RemoveAll(file.Name())
+	}
+}
+
+func restoreWorkTree(tree *treeObject, prevPath string) {
+	for _, file := range tree.files {
+		if _, err := os.Stat(prevPath); err != nil {
+			os.MkdirAll(prevPath, 0777)
+		}
+		f, _ := os.Create(prevPath + "/" + file.path)
+		data := readObjectByHash(file.sha)
+		strData := string(data)
+		nulIdx := strings.Index(strData, "\x00")
+		f.WriteString(strData[nulIdx:])
+	}
+
+	for name, subTree := range tree.directories {
+		restoreWorkTree(subTree, prevPath+"/"+name)
+	}
+}
+
+func cmdCheckout(sha string) {
+	removeAllFileAndDir()
+	tree := readPrevTreeObject(sha)
+	restoreWorkTree(&tree, "./")
+	clearIndex()
 }
