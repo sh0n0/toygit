@@ -60,6 +60,17 @@ func main() {
 				return nil
 			},
 		},
+		{
+			Name: "commit",
+			Action: func(c *cli.Context) error {
+				message := c.Args().First()
+				if message == "" {
+					cli.ShowCommandHelpAndExit(c, "commit", 0)
+				}
+				cmdCommit(message)
+				return nil
+			},
+		},
 	}
 	app.Run(os.Args)
 }
@@ -315,4 +326,62 @@ func addEntriesToIndex(entries []indexEntry) {
 		fmt.Println(err)
 		return
 	}
+}
+
+type treeObject struct {
+	files       map[string]*indexEntry
+	directories map[string]*treeObject
+}
+
+func readPrevTreeObject() treeObject {
+	return treeObject{files: make(map[string]*indexEntry), directories: make(map[string]*treeObject)}
+}
+
+func writeTreeObject(tree treeObject) string {
+	result := ""
+	for fileName, file := range tree.files {
+		result += file.sha + " " + fileName + "\n"
+	}
+	for dirName, dir := range tree.directories {
+		result += writeTreeObject(*dir) + " " + dirName + "\n"
+	}
+	fmt.Println(result)
+
+	return hashObject([]byte(result), true)
+}
+
+func createTreeObject(resPath []string, tree *treeObject, entry indexEntry) {
+	if len(resPath) == 1 {
+		tree.files[resPath[0]] = &entry
+		return
+	}
+	name := resPath[0]
+	res := resPath[1:]
+	if obj, ok := tree.directories[name]; ok {
+		createTreeObject(res, obj, entry)
+	} else {
+		tree.directories[name] = &treeObject{files: make(map[string]*indexEntry), directories: make(map[string]*treeObject)}
+		createTreeObject(res, tree.directories[name], entry)
+	}
+}
+
+func cmdCommit(message string) {
+	entries := readIndexEntries()
+	newTree := readPrevTreeObject()
+
+	for _, entry := range entries {
+		sepPath := strings.Split(entry.path, "/")
+		createTreeObject(sepPath, &newTree, entry)
+	}
+
+	treeSha := writeTreeObject(newTree)
+
+	result := ""
+	result += "tree" + " " + treeSha + "\n"
+	result += "parent" + " " + "parentHash" + "\n"
+	result += "author" + " " + "author_name" + "\n\n"
+	result += message
+
+	commitSha := hashObject([]byte(result), true)
+	fmt.Println(commitSha)
 }
