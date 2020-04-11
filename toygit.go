@@ -137,14 +137,13 @@ func writeZlib(dst io.Writer, data []byte) {
 	zw.Close()
 }
 
-func cmdCatFile(sha1Prefix string) {
+func catFile(sha1Prefix string) {
 	if len(sha1Prefix) < 2 {
 		fmt.Println("hash prefix must be 2 or more characters")
 		return
 	}
 
-	dir, _ := os.Getwd()
-	objDir := dir + "/.toygit/objects/" + sha1Prefix[:2]
+	objDir := ".toygit/objects/" + sha1Prefix[:2]
 	res := sha1Prefix[2:]
 
 	files, _ := ioutil.ReadDir(objDir)
@@ -177,9 +176,17 @@ func cmdCatFile(sha1Prefix string) {
 		fmt.Println(err)
 		return
 	}
-	nulIdx := strings.Index(buf.String(), "\x00")
-	fmt.Println(buf.String()[nulIdx:])
+	topIxd := strings.Index(buf.String(), " ")
+	if buf.String()[:topIxd] == "blob" {
+		nulIdx := strings.Index(buf.String(), "\x00")
+		fmt.Println(buf.String()[nulIdx:])
+	} else {
+		fmt.Println(buf.String())
+	}
+}
 
+func cmdCatFile(sha1Prefix string) {
+	catFile(sha1Prefix)
 	return
 }
 
