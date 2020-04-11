@@ -98,33 +98,26 @@ func cmdHashObject(path string) {
 		return
 	}
 
-	sha := hashObject(path, false)
-	fmt.Println(sha)
-}
-
-func hashObject(path string, write bool) string {
-	dir, _ := os.Getwd()
-	data, err := ioutil.ReadFile(dir + "/" + path)
+	data, err := ioutil.ReadFile(path)
 	if err != nil {
 		fmt.Println(err)
-		return ""
+		return
 	}
-
 	header := "blob" + " " + strconv.Itoa(len(data)) + "\x00"
 	result := append([]byte(header), data...)
 
+	sha := hashObject(result, false)
+	fmt.Println(sha)
+}
+
+func hashObject(result []byte, write bool) string {
 	h := sha1.New()
 	h.Write(result)
 	sha := hex.EncodeToString(h.Sum(nil))
 
 	if write {
-		dir, _ := os.Getwd()
-		path := dir + "/.toygit/objects/" + sha[:2]
+		path := ".toygit/objects/" + sha[:2]
 		os.Mkdir(path, 0777)
-		if err != nil {
-			fmt.Println(err)
-			return sha
-		}
 
 		f, err := os.Create(path + "/" + sha[2:])
 		if err != nil {
@@ -212,8 +205,7 @@ type indexEntry struct {
 }
 
 func readIndexEntries() []indexEntry {
-	dir, _ := os.Getwd()
-	idxPath := dir + "/.toygit/index"
+	idxPath := ".toygit/index"
 	idx, _ := ioutil.ReadFile(idxPath)
 	if len(idx) == 0 {
 		return []indexEntry{}
@@ -268,8 +260,6 @@ func cmdAdd(path string) {
 		allFilePaths = append(allFilePaths, readAllFilePaths(path)...)
 	}
 
-	fmt.Println(allFilePaths)
-
 	for _, entry := range stagedEntries {
 		exist := false
 		for _, newPath := range allFilePaths {
@@ -283,7 +273,14 @@ func cmdAdd(path string) {
 	}
 
 	for _, newPath := range allFilePaths {
-		sha := hashObject(newPath, true)
+		data, err := ioutil.ReadFile(newPath)
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+		header := "blob" + " " + strconv.Itoa(len(data)) + "\x00"
+		result := append([]byte(header), data...)
+		sha := hashObject(result, true)
 		newEntry := indexEntry{sha, newPath}
 		nextEntries = append(nextEntries, newEntry)
 	}
@@ -292,8 +289,7 @@ func cmdAdd(path string) {
 }
 
 func addEntriesToIndex(entries []indexEntry) {
-	dir, _ := os.Getwd()
-	idxPath := dir + "/.toygit/index"
+	idxPath := ".toygit/index"
 	data := ""
 
 	for _, entry := range entries {
