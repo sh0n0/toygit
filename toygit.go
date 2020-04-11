@@ -74,11 +74,11 @@ func main() {
 		{
 			Name: "checkout",
 			Action: func(c *cli.Context) error {
-				hash := c.Args().First()
-				if hash == "" {
+				dist := c.Args().First()
+				if dist == "" {
 					cli.ShowCommandHelpAndExit(c, "checkout", 0)
 				}
-				cmdCheckout(hash)
+				cmdCheckout(dist)
 				return nil
 			},
 		},
@@ -93,7 +93,7 @@ const (
 func cmdInit() {
 	dir, _ := os.Getwd()
 
-	if _, err := os.Stat(dir + "/.toygit"); err == nil {
+	if checkExist(dir + "/.toygit") {
 		fmt.Println("dir exists")
 		return
 	}
@@ -107,7 +107,7 @@ func cmdInit() {
 		return
 	}
 	defer f.Close()
-	f.WriteString("ref: refs/heads/master\n")
+	f.WriteString("ref: refs/heads/master")
 
 	fmt.Println("Initialized empty Toygit repository in " + dir)
 }
@@ -287,7 +287,7 @@ func readAllFilePaths(root string) []string {
 func cmdAdd(path string) {
 	fInfo, err := os.Stat(path)
 	if err != nil {
-		println(err)
+		fmt.Println(err)
 		return
 	}
 
@@ -430,18 +430,23 @@ func readHead() string {
 	return string(br)
 }
 
-func writeHead(name string) {
-	err := ioutil.WriteFile(HEAD_PATH, []byte("ref: refs/heads/master\n"), 0777)
-	if err != nil {
-		fmt.Println(err)
-		return
+func writeHead(name string, isBranch bool) {
+	var data string
+	if isBranch {
+		data = "ref: refs/heads/" + name
+	} else {
+		data = name
 	}
+	f, _ := os.Create(HEAD_PATH)
+	defer f.Close()
+	f.WriteString(data)
 }
 
 func readRef(name string) string {
-	refPath := ".toygit/refs/heads" + "/" + name
-	if _, err := os.Stat(refPath); err != nil {
-		os.Create(refPath)
+	refPath := ".toygit/refs/heads/" + name
+	if !checkExist(refPath) {
+		f, _ := os.Create(refPath)
+		defer f.Close()
 		return ""
 	}
 	rf, _ := ioutil.ReadFile(refPath)
@@ -449,15 +454,16 @@ func readRef(name string) string {
 }
 
 func writeRef(name string, sha string) {
-	refPath := ".toygit/refs/heads" + "/" + name
-	rf, _ := os.Create(refPath)
-	defer rf.Close()
-	rf.WriteString(sha)
+	refPath := ".toygit/refs/heads/" + name
+	f, _ := os.Create(refPath)
+	defer f.Close()
+	f.WriteString(sha)
 }
 
 func clearIndex() {
 	idxPath := ".toygit/index"
-	os.Create(idxPath)
+	f, _ := os.Create(idxPath)
+	f.Close()
 }
 
 func cmdCommit(message string) {
@@ -512,7 +518,7 @@ func removeAllFileAndDir() {
 
 func restoreWorkingTree(tree *treeObject, prevPath string) {
 	for _, file := range tree.files {
-		if _, err := os.Stat(prevPath); err != nil {
+		if !checkExist(prevPath) {
 			os.MkdirAll(prevPath, 0777)
 		}
 		f, _ := os.Create(prevPath + "/" + file.path)
@@ -527,9 +533,32 @@ func restoreWorkingTree(tree *treeObject, prevPath string) {
 	}
 }
 
-func cmdCheckout(sha string) {
+func checkExist(path string) bool {
+	if _, err := os.Stat(path); err == nil {
+		return true
+	}
+	return false
+}
+
+func checkDist(dist string) (sha string, isBranch bool) {
+	path := ".toygit/refs/heads/" + dist
+	fmt.Println(path)
+	if checkExist(path) {
+		commitSha, _ := ioutil.ReadFile(path)
+		return string(commitSha), true
+	}
+	return dist, false
+}
+
+func cmdCheckout(dist string) {
+	sha, isBranch := checkDist(dist)
 	removeAllFileAndDir()
 	tree := readPrevTreeObject(sha)
 	restoreWorkingTree(&tree, "./")
 	clearIndex()
+	if !isBranch {
+		writeHead(sha, false)
+	} else {
+		writeHead(dist, true)
+	}
 }
