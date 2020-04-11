@@ -148,10 +148,10 @@ func writeZlib(dst io.Writer, data []byte) {
 	zw.Close()
 }
 
-func catFile(sha1Prefix string) {
+func readObjectByHash(sha1Prefix string) []byte {
 	if len(sha1Prefix) < 2 {
 		fmt.Println("hash prefix must be 2 or more characters")
-		return
+		return nil
 	}
 
 	objDir := ".toygit/objects/" + sha1Prefix[:2]
@@ -167,32 +167,41 @@ func catFile(sha1Prefix string) {
 
 	if len(objs) == 0 {
 		fmt.Println("not found")
-		return
+		return nil
 	}
 
 	if len(objs) > 1 {
 		fmt.Println("match too many objects")
-		return
+		return nil
 	}
 
 	f, err := os.Open(objDir + "/" + objs[0].Name())
 	if err != nil {
 		fmt.Println(err)
-		return
+		return nil
 	}
 	defer f.Close()
 
 	buf := new(bytes.Buffer)
 	if err := readZlib(buf, f); err != nil {
 		fmt.Println(err)
+		return nil
+	}
+	return buf.Bytes()
+}
+
+func catFile(sha1Prefix string) {
+	data := readObjectByHash(sha1Prefix)
+	if data == nil {
 		return
 	}
-	topIxd := strings.Index(buf.String(), " ")
-	if buf.String()[:topIxd] == "blob" {
-		nulIdx := strings.Index(buf.String(), "\x00")
-		fmt.Println(buf.String()[nulIdx:])
+	strData := string(data)
+	topIxd := strings.Index(strData, " ")
+	if strData[:topIxd] == "blob" {
+		nulIdx := strings.Index(strData, "\x00")
+		fmt.Println(strData[nulIdx:])
 	} else {
-		fmt.Println(buf.String())
+		fmt.Println(strData)
 	}
 }
 
