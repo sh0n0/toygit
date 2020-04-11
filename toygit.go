@@ -510,7 +510,7 @@ func removeAllFileAndDir() {
 	}
 }
 
-func restoreWorkTree(tree *treeObject, prevPath string) {
+func restoreWorkingTree(tree *treeObject, prevPath string) {
 	for _, file := range tree.files {
 		if _, err := os.Stat(prevPath); err != nil {
 			os.MkdirAll(prevPath, 0777)
@@ -523,13 +523,13 @@ func restoreWorkTree(tree *treeObject, prevPath string) {
 	}
 
 	for name, subTree := range tree.directories {
-		restoreWorkTree(subTree, prevPath+"/"+name)
+		restoreWorkingTree(subTree, prevPath+"/"+name)
 	}
 }
 
 func cmdCheckout(sha string) {
 	removeAllFileAndDir()
 	tree := readPrevTreeObject(sha)
-	restoreWorkTree(&tree, "./")
+	restoreWorkingTree(&tree, "./")
 	clearIndex()
 }
